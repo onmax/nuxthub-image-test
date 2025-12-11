@@ -1,0 +1,8 @@
+{
+  "name": "nuxthub-image-test",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "nuxt dev", "build": "nuxt build", "preview": "nuxt preview" },
+  "dependencies": { "@nuxthub/core": "^0.10.0", "@nuxt/image": "^1.10.0", "nuxt": "^3.17.0" },
+  "pnpm": { "onlyBuiltDependencies": ["@parcel/watcher", "esbuild", "sharp"] }
+}
