@@ -4,13 +4,13 @@
 
     <section class="mb-8">
       <h2 class="text-lg font-semibold mb-2">1. Raw blob (works)</h2>
-      <img src="/api/images/test.jpg" width="300" class="rounded shadow" />
+      <img src="/images/test.jpg" width="300" class="rounded shadow" />
     </section>
 
     <section class="mb-8">
       <h2 class="text-lg font-semibold mb-2">2. NuxtImg with nuxthub provider</h2>
       <p class="text-sm text-gray-500 mb-2">Expected: Error "Unknown provider: nuxthub"</p>
-      <NuxtImg src="/api/images/test.jpg" width="300" quality="80" class="rounded shadow" />
+      <NuxtImg src="/images/test.jpg" width="300" quality="80" class="rounded shadow" />
     </section>
   </div>
 </template>
