@@ -2,7 +2,29 @@
   "name": "nuxthub-image-test",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "nuxt dev", "build": "nuxt build", "preview": "nuxt preview" },
-  "dependencies": { "@nuxthub/core": "^0.10.0", "@nuxt/image": "^1.10.0", "nuxt": "^3.17.0" },
-  "pnpm": { "onlyBuiltDependencies": ["@parcel/watcher", "esbuild", "sharp"] }
+  "packageManager": "pnpm@10.11.1+sha512.e519b9f7639869dc8d5c3c5dfef73b3f091094b0a006d7317353c72b124e80e1afd429732e28705ad6bfa1ee879c1fce46c128ccebd3192101f43dd67c667912",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "@nuxt/image": "^2.0.0",
+    "@nuxthub/core": "^0.10.1",
+    "@vercel/blob": "^2.0.0",
+    "nuxt": "^3.17.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild",
+      "sharp"
+    ],
+    "patchedDependencies": {
+      "@nuxthub/core": "patches/@nuxthub__core.patch"
+    }
+  },
+  "devDependencies": {
+    "wrangler": "^4.54.0"
+  }
 }

@@ -1,0 +1,186 @@
+diff --git a/dist/image/runtime/provider.d.ts b/dist/image/runtime/provider.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..937217f4d77f0abfe8b06f10da9af635cdad783f
+--- /dev/null
++++ b/dist/image/runtime/provider.d.ts
+@@ -0,0 +1,8 @@
++export declare function getImage(src: string, { modifiers, baseURL, driver, path }?: {
++    modifiers?: Record<string, any>;
++    baseURL?: string;
++    driver?: string;
++    path?: string;
++}, ctx?: any): any;
++declare const _default: any;
++export default _default;
+diff --git a/dist/image/runtime/provider.mjs b/dist/image/runtime/provider.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..f1a3c47d1a0d156f288a1d3c3dea23e9e75dfe2a
+--- /dev/null
++++ b/dist/image/runtime/provider.mjs
+@@ -0,0 +1,29 @@
++import { joinURL } from "ufo";
++import { defineProvider } from "@nuxt/image/runtime";
++import cloudflareProvider from "@nuxt/image/runtime/providers/cloudflare";
++import vercelProvider from "@nuxt/image/runtime/providers/vercel";
++const cfProvider = cloudflareProvider();
++const vercelProviderInstance = vercelProvider();
++export function getImage(src, {
++  modifiers = {},
++  baseURL,
++  driver,
++  path
++} = {}, ctx) {
++  const hasProtocol = /^[a-z][a-z0-9+.-]*:/.test(src);
++  const isAbsolute = hasProtocol || src.startsWith("/");
++  const passThroughBase = path || baseURL || "/";
++  const resolvedSrc = isAbsolute ? src : joinURL(passThroughBase, src);
++  if (import.meta.dev) {
++    return { url: resolvedSrc };
++  }
++  const safeCtx = ctx || { options: { screens: {}, domains: [] } };
++  if (driver === "cloudflare-r2") {
++    return cfProvider.getImage(resolvedSrc, { modifiers, baseURL }, safeCtx);
++  }
++  if (driver === "vercel-blob") {
++    return vercelProviderInstance.getImage(resolvedSrc, { modifiers, baseURL }, safeCtx);
++  }
++  return { url: resolvedSrc };
++}
++export default defineProvider({ getImage });
+diff --git a/dist/module.d.mts b/dist/module.d.mts
+index f3f1a2380379e87ad8f5a36803d3d93f8ce597e4..1236cddd86e3cb3297359a78f651d9ec1249d16d 100644
+--- a/dist/module.d.mts
++++ b/dist/module.d.mts
+@@ -94,18 +94,33 @@ interface ModuleOptions {
+      */
+     hosting?: string;
+ }
++interface BlobImageConfig {
++    /**
++     * Path where blob images are served via your route handler.
++     * Enables automatic @nuxt/image configuration.
++     * @example '/images'
++     */
++    path: string;
++}
++interface BaseBlobConfig {
++    /**
++     * @nuxt/image integration settings.
++     * Set `image.path` to match your blob serve route.
++     */
++    image?: BlobImageConfig;
++}
+ type FSBlobConfig = {
+     driver: 'fs';
+-} & FSDriverOptions;
++} & FSDriverOptions & BaseBlobConfig;
+ type S3BlobConfig = {
+     driver: 's3';
+-} & S3DriverOptions;
++} & S3DriverOptions & BaseBlobConfig;
+ type VercelBlobConfig = {
+     driver: 'vercel-blob';
+-} & VercelDriverOptions;
++} & VercelDriverOptions & BaseBlobConfig;
+ type CloudflareR2BlobConfig = {
+     driver: 'cloudflare-r2';
+-} & CloudflareDriverOptions;
++} & CloudflareDriverOptions & BaseBlobConfig;
+ type BlobConfig = boolean | FSBlobConfig | S3BlobConfig | VercelBlobConfig | CloudflareR2BlobConfig;
+ type ResolvedBlobConfig = FSBlobConfig | S3BlobConfig | VercelBlobConfig | CloudflareR2BlobConfig;
+ type CacheConfig = {
+@@ -217,4 +232,4 @@ type ResolvedDatabaseConfig = DatabaseConfig & {
+ declare const _default: NuxtModule<ModuleOptions$1>;
+ 
+ export { _default as default };
+-export type { BlobConfig, CacheConfig, CloudflareR2BlobConfig, DatabaseConfig, FSBlobConfig, HubConfig, KVConfig, ModuleOptions, ModuleRuntimeConfig, ResolvedBlobConfig, ResolvedCacheConfig, ResolvedDatabaseConfig, ResolvedHubConfig, ResolvedKVConfig, S3BlobConfig, VercelBlobConfig };
++export type { BlobConfig, BlobImageConfig, CacheConfig, CloudflareR2BlobConfig, DatabaseConfig, FSBlobConfig, HubConfig, KVConfig, ModuleOptions, ModuleRuntimeConfig, ResolvedBlobConfig, ResolvedCacheConfig, ResolvedDatabaseConfig, ResolvedHubConfig, ResolvedKVConfig, S3BlobConfig, VercelBlobConfig };
+diff --git a/dist/module.mjs b/dist/module.mjs
+index 8f80a9b9dee5fdfa22525854e955e395416432a0..570f637152f478034b9ff24a64bd19a1299d0c81 100644
+--- a/dist/module.mjs
++++ b/dist/module.mjs
+@@ -1,5 +1,5 @@
+ import { mkdir, readFile, writeFile } from 'node:fs/promises';
+-import { logger, createResolver, addServerPlugin, getLayerDirectories, updateTemplates, addTemplate, addTypeTemplate, addServerHandler, addServerImports, addImportsDir, defineNuxtModule } from '@nuxt/kit';
++import { logger, createResolver, addServerPlugin, getLayerDirectories, updateTemplates, addTemplate, addTypeTemplate, addServerHandler, addServerImports, resolvePath as resolvePath$1, addImportsDir, defineNuxtModule } from '@nuxt/kit';
+ import { join, resolve as resolve$1, relative } from 'pathe';
+ import { defu } from 'defu';
+ import { readPackageJSON, findWorkspaceDir } from 'pkg-types';
+@@ -455,6 +455,40 @@ export const kv = createStorage({
+   logWhenReady(nuxt, `\`hub:kv\` using \`${driver}\` driver`);
+ }
+ 
++async function setupImage(nuxt, hub, deps) {
++  if (!hub.blob) return;
++  const blobConfig = hub.blob;
++  const imagePath = blobConfig.image?.path;
++  if (!imagePath) return;
++  const imageVersion = deps["@nuxt/image"];
++  if (!imageVersion) {
++    logWhenReady(nuxt, "Install @nuxt/image v2+ to enable NuxtHub image optimization", "warn");
++    return;
++  }
++  try {
++    await resolvePath$1("@nuxt/image/runtime");
++  } catch {
++    logWhenReady(nuxt, "@nuxt/image v2+ is required for NuxtHub integration. Please upgrade to @nuxt/image@^2.0.0", "warn");
++    return;
++  }
++  const normalizedPath = (imagePath.startsWith("/") ? imagePath : `/${imagePath}`).replace(/\/+$/, "") || "/";
++  nuxt.options.image ||= {};
++  nuxt.options.image.providers ||= {};
++  const existingProvider = nuxt.options.image.providers.nuxthub;
++  const providerPath = resolve("image/runtime/provider");
++  const isCustomProvider = existingProvider?.provider && existingProvider.provider !== providerPath;
++  if (!isCustomProvider) {
++    nuxt.options.image.providers.nuxthub = defu(existingProvider || {}, {
++      provider: providerPath,
++      options: { driver: blobConfig.driver, path: normalizedPath }
++    });
++  }
++  if (!nuxt.options.image.provider || nuxt.options.image.provider === "auto") {
++    nuxt.options.image.provider = "nuxthub";
++  }
++  logWhenReady(nuxt, `\`@nuxt/image\` nuxthub provider registered (${blobConfig.driver})`);
++}
++
+ const log$2 = logger.withTag("nuxt:hub");
+ const supportedDrivers = ["fs", "s3", "vercel-blob", "cloudflare-r2"];
+ function resolveBlobConfig(hub, deps) {
+@@ -479,6 +513,9 @@ function resolveBlobConfig(hub, deps) {
+     if (!deps["@vercel/blob"]) {
+       log$2.error("Please run `npx nypm i @vercel/blob` to use Vercel Blob");
+     }
++    if (!process.env.BLOB_READ_WRITE_TOKEN) {
++      log$2.warn("Set BLOB_READ_WRITE_TOKEN env var for Vercel Blob storage");
++    }
+     return defu(hub.blob, {
+       driver: "vercel-blob",
+       access: "public"
+@@ -495,7 +532,7 @@ function resolveBlobConfig(hub, deps) {
+     dir: join(hub.dir, "blob")
+   });
+ }
+-function setupBlob(nuxt, hub, deps) {
++async function setupBlob(nuxt, hub, deps) {
+   hub.blob = resolveBlobConfig(hub, deps);
+   if (!hub.blob) return;
+   const blobConfig = hub.blob;
+@@ -527,6 +564,7 @@ export const blob = createBlobStorage(createDriver(${JSON.stringify(driverOption
+     nuxt.options.runtimeConfig.public.hub.blobProvider = "vercel-blob";
+     logWhenReady(nuxt, "Files stored in Vercel Blob are public. Manually configure a different storage driver if storing sensitive files.", "warn");
+   }
++  await setupImage(nuxt, hub, deps);
+   logWhenReady(nuxt, `\`hub:blob\` using \`${blobConfig.driver}\` driver`);
+ }
+ 
+diff --git a/dist/types.d.mts b/dist/types.d.mts
+index 7e1e786c898558b16a56577c602eabe393cd28fc..3a73beb91065e856a83b6f24f7a3d28555c83264 100644
+--- a/dist/types.d.mts
++++ b/dist/types.d.mts
+@@ -6,4 +6,4 @@ declare module '@nuxt/schema' {
+ 
+ export { default } from './module.mjs'
+ 
+-export { type BlobConfig, type CacheConfig, type CloudflareR2BlobConfig, type DatabaseConfig, type FSBlobConfig, type HubConfig, type KVConfig, type ModuleOptions, type ModuleRuntimeConfig, type ResolvedBlobConfig, type ResolvedCacheConfig, type ResolvedDatabaseConfig, type ResolvedHubConfig, type ResolvedKVConfig, type S3BlobConfig, type VercelBlobConfig } from './module.mjs'
++export { type BlobConfig, type BlobImageConfig, type CacheConfig, type CloudflareR2BlobConfig, type DatabaseConfig, type FSBlobConfig, type HubConfig, type KVConfig, type ModuleOptions, type ModuleRuntimeConfig, type ResolvedBlobConfig, type ResolvedCacheConfig, type ResolvedDatabaseConfig, type ResolvedHubConfig, type ResolvedKVConfig, type S3BlobConfig, type VercelBlobConfig } from './module.mjs'
