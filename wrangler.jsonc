@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nuxthub-image-test",
+  "account_id": "ba6e044dfdaaffec3cac45e9feccd237",
+  "main": ".output/server/index.mjs",
+  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2024-12-01",
+  "r2_buckets": [{ "binding": "BLOB", "bucket_name": "nuxthub-image-test-blob" }]
+}
